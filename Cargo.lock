@@ -101,9 +101,9 @@ dependencies = [
 
 [[package]]
 name = "lolevel"
-version = "0.4.0-indev"
+version = "0.5.1-indev"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4ca50ef3b978c3e8676e4e9b2358e71f3c7e8f17dfbd2507ccae59437c3e301"
+checksum = "5483190591cb5977aba1672d4f2ad1f37849fdd4a2cfe026d25b694b1dbde33f"
 
 [[package]]
 name = "parking_lot"

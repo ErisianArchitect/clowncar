@@ -7,5 +7,5 @@ license = "MIT"
 [dependencies]
 ctor = "0.8.0"
 hashbrown = "0.16.1"
-lolevel = "0.4.0-indev"
+lolevel = "0.5.1-indev"
 parking_lot = "0.12.5"

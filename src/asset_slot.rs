@@ -1,8 +1,14 @@
-use std::{alloc::Layout, any::TypeId, hash::Hash, ptr::NonNull};
+use std::{alloc::Layout, hash::Hash, marker::PhantomData, ptr::NonNull};
 
 use lolevel::counting::RefCounter;
 
-use crate::{AssetKey, KeyType};
+use crate::{
+    AssetKey,
+    KeyType,
+    util::{
+        TypeId,
+    }
+};
 
 pub trait AssetType: Sized + Send + Sync + 'static {}
 impl<T> AssetType for T
@@ -10,14 +16,13 @@ where T: Sized + Send + Sync + 'static {}
 
 #[repr(C)]
 #[derive(Debug)]
-pub(crate) struct AssetSlotInner<K, T: AssetType> {
-    ref_count: RefCounter,
-    dealloc: fn(NonNull<()>),
-    key: AssetKey<K>,
-    asset: T,
+pub(crate) struct AssetSlotInner<T: AssetType> {
+    pub(crate) ref_count: RefCounter,
+    pub(crate) key: AssetKey,
+    pub(crate) asset: T,
 }
 
-impl<K: KeyType, T: AssetType> AssetSlotInner<K, T> {
+impl<T: AssetType> AssetSlotInner<T> {
     const LAYOUT: Layout = Layout::new::<Self>();
 
     unsafe fn dealloc(ptr: NonNull<()>) {
@@ -29,22 +34,15 @@ impl<K: KeyType, T: AssetType> AssetSlotInner<K, T> {
         }
     }
     
-    unsafe fn alloc(key: AssetKey<K>, asset: T) -> NonNull<Self> {
+    unsafe fn alloc(key: AssetKey, asset: T) -> NonNull<Self> {
         let ptr = unsafe { std::alloc::alloc(Self::LAYOUT).cast::<Self>() };
         let Some(ptr) = NonNull::new(ptr) else {
             std::alloc::handle_alloc_error(Self::LAYOUT);
         };
-        let dealloc: fn(NonNull<()>) = |ptr: NonNull<()>| {
-            unsafe {
-                ptr.cast::<AssetSlotInner<K, T>>().drop_in_place();
-                Self::dealloc(ptr);
-            }
-        };
         unsafe {
             ptr.write(Self {
-                ref_count: RefCounter::new(0),
+                ref_count: RefCounter::new(1),
                 key,
-                dealloc,
                 asset,
             });
         }
@@ -53,24 +51,23 @@ impl<K: KeyType, T: AssetType> AssetSlotInner<K, T> {
 }
 
 #[repr(transparent)]
-pub(crate) struct AssetSlot<K: KeyType, T: AssetType = ()> {
-    ptr: NonNull<AssetSlotInner<K, T>>,
+pub(crate) struct AssetSlot<T: AssetType = ()> {
+    pub(crate) ptr: NonNull<AssetSlotInner<T>>,
 }
-const _: () = lolevel::checks::assert_pointer_niche::<AssetSlot<Box<str>, ()>>();
-const _: () = lolevel::checks::assert_pointer_niche::<AssetSlot<Box<str>, Box<str>>>(); // Doesn't make a difference, but whatever.
+const _: () = lolevel::checks::assert_pointer_niche::<AssetSlot<()>>();
+const _: () = lolevel::checks::assert_pointer_niche::<AssetSlot<Box<str>>>(); // Doesn't make a difference, but whatever.
 
-unsafe impl<K, T> Send for AssetSlot<K, T>
-where K: KeyType, T: AssetType {}
-unsafe impl<K, T> Sync for AssetSlot<K, T>
-where K: KeyType, T: AssetType {}
+unsafe impl<T> Send for AssetSlot<T>
+where T: AssetType {}
+unsafe impl<T> Sync for AssetSlot<T>
+where T: AssetType {}
 
-impl<K: KeyType, T: AssetType> AssetSlot<K, T> {
-    const TYPE_ID: TypeId = TypeId::of::<T>();
+impl<T: AssetType> AssetSlot<T> {
 
-    pub fn new(key: K, asset: T) -> AssetSlot<K, T> {
+    pub fn new(key: Box<str>, asset: T) -> AssetSlot<T> {
         Self {
-            ptr: unsafe { AssetSlotInner::<K, T>::alloc(
-                AssetKey::new(Self::TYPE_ID, key),
+            ptr: unsafe { AssetSlotInner::<T>::alloc(
+                AssetKey::new(TypeId::of::<T>(), key),
                 asset
             ) },
         }
@@ -78,21 +75,21 @@ impl<K: KeyType, T: AssetType> AssetSlot<K, T> {
 
     #[must_use]
     #[inline(always)]
-    pub fn as_ref(&self) -> &AssetSlotInner<K, T> {
+    pub fn as_ref(&self) -> &AssetSlotInner<T> {
         unsafe { self.ptr.as_ref() }
     }
 
     #[must_use]
     #[inline(always)]
-    pub fn erased(self) -> AssetSlot<K, ()> {
+    pub fn erased(self) -> AssetSlot<()> {
         AssetSlot {
             ptr: std::mem::ManuallyDrop::new(self).ptr.cast(),
         }
     }
 }
 
-impl<K: KeyType, T: AssetType> std::ops::Deref for AssetSlot<K, T> {
-    type Target = AssetSlotInner<K, T>;
+impl<T: AssetType> std::ops::Deref for AssetSlot<T> {
+    type Target = AssetSlotInner<T>;
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
@@ -100,34 +97,23 @@ impl<K: KeyType, T: AssetType> std::ops::Deref for AssetSlot<K, T> {
     }
 }
 
-impl<K: KeyType, T: AssetType> Drop for AssetSlot<K, T> {
-    fn drop(&mut self) {
-        let dealloc = self.dealloc;
-        (dealloc)(self.ptr.cast());
-    }
+pub struct Asset<'a, T: AssetType> {
+    pub(crate) ptr: NonNull<AssetSlotInner<T>>,
+    _phantom: PhantomData<*const &'a T>,
 }
 
-pub struct Asset<K: KeyType, T: AssetType> {
-    ptr: NonNull<AssetSlotInner<K, T>>,
-}
-
-unsafe impl<K, T> Send for Asset<K, T>
-where K: KeyType, T: AssetType {}
-unsafe impl<K, T> Sync for Asset<K, T>
-where K: KeyType, T: AssetType {}
-
-impl<K: KeyType, T: AssetType> Asset<K, T> {
+impl<'a, T: AssetType> Asset<'a, T> {
     #[must_use]
     #[inline(always)]
-    pub(crate) fn new(ptr: NonNull<AssetSlotInner<K, T>>) -> Self {
+    pub(crate) fn new(ptr: NonNull<AssetSlotInner<T>>) -> Self {
         let ptr_ref = unsafe { ptr.as_ref() };
         ptr_ref.ref_count.increment();
-        Self { ptr }
+        Self { ptr, _phantom: PhantomData }
     }
 
     #[must_use]
     #[inline(always)]
-    pub(crate) fn as_inner_ref(&self) -> &AssetSlotInner<K, T> {
+    pub(crate) fn as_inner_ref(&self) -> &AssetSlotInner<T> {
         unsafe { self.ptr.as_ref() }
     }
 
@@ -138,7 +124,7 @@ impl<K: KeyType, T: AssetType> Asset<K, T> {
     }
 }
 
-impl<K: KeyType, T: AssetType> std::ops::Deref for Asset<K, T> {
+impl<'a, T: AssetType> std::ops::Deref for Asset<'a, T> {
     type Target = T;
 
     #[inline(always)]
@@ -147,10 +133,11 @@ impl<K: KeyType, T: AssetType> std::ops::Deref for Asset<K, T> {
     }
 }
 
-impl<K: KeyType, T: AssetType> Drop for Asset<K, T> {
+impl<'a, T: AssetType> Drop for Asset<'a, T> {
     fn drop(&mut self) {
-        if matches!(self.as_inner_ref().ref_count.decrement(), Ok(true)) {
-            // TODO: Unload asset.
+        if matches!(self.as_inner_ref().ref_count.decrement(), Ok(0)) {
+            // TODO: Asset store unload when that is implemented.
+            unsafe { AssetSlotInner::<T>::dealloc(self.ptr.cast()); }
         }
     }
 }
