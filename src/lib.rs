@@ -10,5 +10,6 @@ use std::hash::DefaultHasher;
 use hashbrown::HashTable;
 
 pub use asset_slot::*;
+pub use ident::{Ident, IndirectType, StorageType, IndirectFlags};
 // pub use asset_store::*;
 use key::*;

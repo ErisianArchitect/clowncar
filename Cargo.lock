@@ -28,6 +28,7 @@ dependencies = [
  "hashbrown",
  "lolevel",
  "parking_lot",
+ "paste",
 ]
 
 [[package]]
@@ -101,9 +102,9 @@ dependencies = [
 
 [[package]]
 name = "lolevel"
-version = "0.5.1-indev"
+version = "0.6.0-indev"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5483190591cb5977aba1672d4f2ad1f37849fdd4a2cfe026d25b694b1dbde33f"
+checksum = "df1425b1b323ccdcc237f4f6d7e5391e52f57e7e9958970be4fff09641aa8888"
 
 [[package]]
 name = "parking_lot"
@@ -127,6 +128,12 @@ dependencies = [
  "smallvec",
  "windows-link",
 ]
+
+[[package]]
+name = "paste"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "redox_syscall"
