@@ -291,6 +291,9 @@ struct Inline {
     fast: InlineFast,
     len: IdentLen,
 }
+const _: () = lolevel::checks::const_assert(
+    std::mem::offset_of!(Inline, len) == 15
+);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -666,7 +669,7 @@ impl Ident {
     #[must_use]
     #[inline]
     pub const fn is_inline(&self) -> bool {
-        self.storage_type().is_inline()
+        self.inline.len as usize != IdentLen::ADDR
     }
 
     #[must_use]
@@ -731,20 +734,16 @@ impl Drop for Ident {
                         }
                     },
                     IndirectType::Box => unsafe {
-                        const _: () = lolevel::checks::assert_same_size_align::<*const str, &[u8]>();
-                        drop(Box::<str>::from_raw(
-                            make_str_ptr(indirect.ptr.as_ptr(), indirect.len()).cast_mut()
-                        ));
+                        let mut boxed = indirect.forgotten_box();
+                        ManuallyDrop::drop(&mut boxed);
                     },
                     IndirectType::Arc => unsafe {
-                        drop(Arc::<str>::from_raw(
-                            make_str_ptr(indirect.ptr.as_ptr(), indirect.len())
-                        ));
+                        let mut arc = indirect.forgotten_arc();
+                        ManuallyDrop::drop(&mut arc);
                     },
                     IndirectType::Rc => unsafe {
-                        drop(Rc::<str>::from_raw(
-                            make_str_ptr(indirect.ptr.as_ptr(), indirect.len())
-                        ));
+                        let mut rc = indirect.forgotten_rc();
+                        ManuallyDrop::drop(&mut rc);
                     },
                 }
             }
